@@ -1,13 +1,12 @@
-local utils = require('markdown-toc.utils')
-local config = require('markdown-toc.config')
-
+---@class MarkdownTOC
 local M = {}
 
-M.load = utils.load
-M.setup = config.setup
+function M.load()
+  require('markdown-toc.utils').load()
+end
 
-M.load()
-
-M.setup()
+function M.setup(opts)
+  require('markdown-toc.config').setup(opts)
+end
 
 return M

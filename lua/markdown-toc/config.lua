@@ -1,14 +1,13 @@
----@class Config
-
+---@class MarkdownTOC.Config
 local M = {}
 
+---@class MarkdownTOCOpts
 local defaults = {
+  -- Set to display a dropdown to allow you to select the heading level
+  ask_for_heading_level = false,
 
   -- The heading level to match (i.e the number of "#"s to match to)
   heading_level_to_match = -1,
-
-  -- Set to display a dropdown to allow you to select the heading level
-  ask_for_heading_level = false,
 
   -- TOC default string
   -- The first %s is for indenting/tabs
@@ -19,21 +18,18 @@ local defaults = {
   toc_format = '%s- [%s](<%s#%s>)',
 }
 
----@type Config
-M.options = {}
+M.options = {} ---@type MarkdownTOCOpts
 
----@param options Config|nil
-function M.setup(options)
-  M.options = vim.tbl_deep_extend('force', {}, defaults, options or {})
-  if M.options.heading_level_to_match > 6 then
-    M.options.heading_level_to_match = 6
-  end
+---@param opts? MarkdownTOCOpts
+function M.setup(opts)
+  M.options = vim.tbl_deep_extend('force', defaults, opts or {})
+  M.options.heading_level_to_match = M.options.heading_level_to_match > 6 and 6
+    or M.options.heading_level_to_match
 end
 
----@param options Config|nil
-function M.extend(options)
-  M.options =
-    vim.tbl_deep_extend('force', {}, M.options or defaults, options or {})
+---@param opts? MarkdownTOCOpts
+function M.extend(opts)
+  M.options = vim.tbl_deep_extend('force', M.options, opts or {})
 end
 
 return M

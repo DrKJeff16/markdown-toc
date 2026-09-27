@@ -1,47 +1,38 @@
 local config = require('markdown-toc.config')
 local select_heading_level = require('markdown-toc.select_heading_level')
 local pick_git_file = require('markdown-toc.pick_paths').pick_git_file
-local get_relative_path = require('markdown-toc.pick_paths').get_relative_path
 local delete_TOC = require('markdown-toc.delete_TOC').delete_TOC
+
+---@class MarkdownTOC.Utils
 local M = {}
 
+---@param filepath string
+---@return string|nil|? content
 function M.read_file(filepath)
   local file = io.open(filepath, 'r')
-  if not file then
-    return nil
+  if file then
+    local content = file:read('*all') --[[@as string|nil|?]]
+    file:close()
+    return content
   end
-
-  local content = file:read('*all')
-  file:close()
-  return content
 end
 
+---@param content string
+---@param filepath string
+---@param heading_level_to_match integer
 function M.process_heading(content, filepath, heading_level_to_match)
-  local lines = {}
+  local lines = {} ---@type string[]
   for line in content:gmatch('[^\r\n]+') do
     table.insert(lines, line)
   end
 
-  local output = {}
-
-  local current_buffer = vim.api.nvim_buf_get_name(0)
-  local relative_path = get_relative_path(current_buffer, filepath)
-
-  local expandtab = vim.api.nvim_get_option_value('expandtab', {})
-
+  local output = {} ---@type string[]
+  local bufnr = vim.api.nvim_get_current_buf()
+  local expandtab = vim.api.nvim_get_option_value('expandtab', { buf = bufnr })
   for _, line in ipairs(lines) do
-    local heading_level, heading_text = line:match('^(#+)%s*(.+)')
+    local heading_level, heading_text = line:match('^(#+)%s*(.+)') ---@type string|nil|?, string|nil|?
     if heading_level and heading_text then
-      local level = #heading_level - 1
-
-      local indent = string.rep('\t', level)
-      if expandtab then
-        local tabstop = vim.api.nvim_get_option_value('tabstop', {})
-        indent = string.rep(' ', level * tabstop)
-      end
-
-      local heading_anchor = heading_text:gsub('%s+', '-')
-      heading_anchor = heading_anchor:lower()
+      local heading_anchor = heading_text:gsub('%s+', '-'):lower()
 
       --[[ 
       --  This little block of code gave a lot of probles but for anyone interested
@@ -63,76 +54,74 @@ function M.process_heading(content, filepath, heading_level_to_match)
       --]]
 
       if heading_anchor:find('[\u{FE0F}]') then
-        heading_anchor = heading_anchor:gsub('[\u{FE0F}]', '')
-        heading_anchor = heading_anchor:gsub('[\u{1F600}-\u{1F64F}]', function()
-          return '%EF%B8%8F'
-        end, 1)
+        heading_anchor = heading_anchor
+          :gsub('[\u{FE0F}]', '')
+          :gsub('[\u{1F600}-\u{1F64F}]', function()
+            return '%EF%B8%8F'
+          end, 1)
       end
-      heading_anchor = heading_anchor:gsub('[\u{1F600}-\u{1F64F}]', '')
-      local formatted_line = string.format(
-        config.options.toc_format,
-        indent,
-        heading_text,
-        relative_path,
-        heading_anchor
-      )
       if
         heading_level_to_match == -1
-        or #heading_level <= heading_level_to_match
+        or heading_level:len() <= heading_level_to_match
       then
-        table.insert(output, formatted_line)
+        table.insert(
+          output,
+          config.options.toc_format:format(
+            not expandtab and ('\t'):rep(heading_level:len() - 1)
+              or (' '):rep(
+                (heading_level:len() - 1)
+                  * vim.api.nvim_get_option_value('tabstop', { buf = bufnr })
+              ),
+            heading_text,
+            require('markdown-toc.pick_paths').get_relative_path(
+              vim.api.nvim_buf_get_name(bufnr),
+              filepath
+            ),
+            heading_anchor:gsub('[\u{1F600}-\u{1F64F}]', '')
+          )
+        )
       end
     end
   end
 
-  local toc = table.concat(output, '\n')
-
   delete_TOC()
 
-  local current_buf = vim.api.nvim_get_current_buf()
-  local row, col = unpack(vim.api.nvim_win_get_cursor(0))
-
+  local row = vim.api.nvim_win_get_cursor(vim.api.nvim_get_current_win())[1]
   vim.api.nvim_buf_set_lines(
-    current_buf,
+    bufnr,
     row - 1,
     row - 1,
     false,
-    vim.split(toc, '\n')
+    vim.split(table.concat(output, '\n'), '\n')
   )
 end
 
+---@param filepath string
+---@param heading_level_to_match? integer
 function M.generate_toc_from_file(filepath, heading_level_to_match)
   local content = M.read_file(filepath)
-
   if not content then
-    print('failed to read the file.')
-    return
-  end
-
-  if heading_level_to_match then
+    vim.notify('battery.nvim - failed to read the file.', vim.log.levels.ERROR)
+  elseif heading_level_to_match then
     M.process_heading(content, filepath, heading_level_to_match)
-    return
-  end
-
-  heading_level_to_match = config.options.heading_level_to_match
-  if config.options.ask_for_heading_level then
-    select_heading_level(function(heading_level)
-      M.process_heading(content, filepath, heading_level)
-    end)
   else
-    M.process_heading(content, filepath, heading_level_to_match)
+    heading_level_to_match = config.options.heading_level_to_match
+    if config.options.ask_for_heading_level then
+      select_heading_level(function(heading_level)
+        M.process_heading(content, filepath, heading_level)
+      end)
+    else
+      M.process_heading(content, filepath, heading_level_to_match)
+    end
   end
 end
 
 function M.pick_file_with_telescope(args)
   pick_git_file(function(filepath)
-    args = args or nil
-    local heading_level
-    if args ~= nil then
-      heading_level = tonumber(args)
-    end
-
-    M.generate_toc_from_file(filepath, heading_level)
+    M.generate_toc_from_file(
+      filepath,
+      args ~= nil and tonumber(args, 10) or nil
+    )
   end)
 end
 

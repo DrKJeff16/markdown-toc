@@ -26,51 +26,38 @@
 
 --]]
 
+---@class MarkownTOC.Delete
 local M = {}
 
+---@param line string
+---@return boolean valid
 local function is_valid_heading(line)
-  -- Define the expected pattern
-  local pattern =
-    '^%s*[%-%*]%s+%[%s*(.-)%s*%]%s*%(<%s*(.-)%s*#%s*(.-)%s*>%s*%)%s*$'
-
   -- Check if the line matches the pattern
-  local heading_name, file_path, heading_link = line:match(pattern)
-  if heading_name and file_path and heading_link then
-    return true
-  else
-    return false
-  end
+  local heading_name, file_path, heading_link = line:match(
+    '^%s*[%-%*]%s+%[%s*(.-)%s*%]%s*%(<%s*(.-)%s*#%s*(.-)%s*>%s*%)%s*$'
+  )
+  return heading_name ~= nil and file_path ~= nil and heading_link ~= nil
 end
 
 function M.delete_TOC()
   local cursor_line = vim.fn.line('.')
-  local current_buffer = vim.api.nvim_get_current_buf()
-
-  local top_line = cursor_line
-  local bottom_line = cursor_line
-  -- Delete matching lines above the cursor
-  for line_num = cursor_line - 1, 1, -1 do
-    local line = vim.fn.getline(line_num)
-    local is_heading = is_valid_heading(line)
-    if is_heading then
-      top_line = line_num
-    else
+  local top_line, bottom_line = cursor_line, cursor_line
+  for line_num = cursor_line - 1, 1, -1 do -- Delete matching lines above the cursor
+    if not is_valid_heading(vim.fn.getline(line_num)) then
       break -- Stop iterating if the line doesn't match the pattern
     end
+    top_line = line_num
   end
 
   -- Delete matching lines below the cursor
   for line_num = cursor_line + 1, vim.fn.line('$') do
-    local line = vim.fn.getline(line_num)
-    local is_heading = is_valid_heading(line)
-    if is_heading then
-      bottom_line = line_num
-    else
+    if not is_valid_heading(vim.fn.getline(line_num)) then
       break -- Stop iterating if the line doesn't match the pattern
     end
+    bottom_line = line_num
   end
 
-  vim.fn.deletebufline(current_buffer, top_line, bottom_line)
+  vim.fn.deletebufline(vim.api.nvim_get_current_buf(), top_line, bottom_line)
   -- Insert the new heading line
   -- vim.fn.setline(vim.fn.line('.'), new_toc)
 end
